@@ -91,10 +91,10 @@ def main_loop():
                         print(f" -> 購入結果を保存しました: {filename_buy}")
                         
                         # --- 【変更箇所】「OK」ボタンを2種類の画像で無限ループ待機 ---
-                        print("4. 「OK」(ok.png または ok2.png) の出現を待機しています...")
+                        print("4. 「OK」(ok.png) の出現を待機しています...")
                         while True:
                             # retries=1にして、このwhileループ自体でリトライを管理します
-                            if click_image("ok.png", retries=1, delay=0.5) or click_image("ok2.png", retries=1, delay=0.5):
+                            if click_image("ok.png", retries=1, delay=0.5):
                                 print(" -> 「OK」をタップしました。")
                                 time.sleep(2) # 画面遷移の待機
                                 break # OKが見つかったので無限ループを抜ける
