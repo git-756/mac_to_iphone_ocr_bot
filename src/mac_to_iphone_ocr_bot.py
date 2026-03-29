@@ -11,11 +11,17 @@ SCREENSHOT_DIR = BASE_DIR / "screenshots"
 # 認識のしきい値
 CONFIDENCE = 0.85 
 
+# 欠損している画像ファイル名を記録するセット（エラーの連続表示を防ぐため）
+MISSING_IMAGES = set()
+
 def click_image(image_filename, retries=3, delay=1.0):
     img_path = str(IMG_DIR / image_filename)
     
     if not Path(img_path).exists():
-        print(f"【エラー】画像ファイルが見つかりません: {img_path}")
+        # まだ警告を出していない画像の場合のみエラーを表示
+        if image_filename not in MISSING_IMAGES:
+            print(f"【エラー】画像ファイルが見つかりません: {image_filename} (以降の警告は省略します)")
+            MISSING_IMAGES.add(image_filename)
         return False
 
     for _ in range(retries):
@@ -62,7 +68,6 @@ def main_loop():
                 print(" -> タップしました。画面遷移を待ちます。(1秒)")
                 time.sleep(1)
 
-                # 「掘り出し物を見る」タップ後のスクショ（前回追加分）
                 timestamp_view = time.strftime("%Y%m%d_%H%M%S")
                 filename_view = f"sc_{timestamp_view}.png"
                 pyautogui.screenshot().save(SCREENSHOT_DIR / filename_view)
@@ -79,23 +84,34 @@ def main_loop():
                         print(" -> 購入処理を実行しました。演出完了を待ちます。(3秒)")
                         time.sleep(3) 
 
-                        # --- 【今回追加】購入後のスクリーンショット撮影 ---
-                        print(" -> [追加機能] 購入後のスクリーンショットを撮影します...")
+                        print(" -> 購入後のスクリーンショットを撮影します...")
                         timestamp_buy = time.strftime("%Y%m%d_%H%M%S")
                         filename_buy = f"purchased_item_{timestamp_buy}.png"
                         pyautogui.screenshot().save(SCREENSHOT_DIR / filename_buy)
                         print(f" -> 購入結果を保存しました: {filename_buy}")
                         
-                        # --- 【今回追加】「OK」ボタンをタップして次へ進む ---
-                        print("4. 「OK」(ok.png) を探しています...")
-                        # 演出でOKボタンが出るまで少し時間がかかることを想定し、リトライ回数を多め（5回=約5秒）に設定
-                        if click_image("ok.png", retries=5):
-                            print(" -> 「OK」をタップしました。次の探索へ戻ります。")
-                            time.sleep(2) # 画面が戻るまでの待機
-                        else:
-                            print(" -> 「OK」が見つかりませんでした。手動で確認するか、画像を取り直してください。")
+                        # --- 【変更箇所】「OK」ボタンを2種類の画像で無限ループ待機 ---
+                        print("4. 「OK」(ok.png または ok2.png) の出現を待機しています...")
+                        while True:
+                            # retries=1にして、このwhileループ自体でリトライを管理します
+                            if click_image("ok.png", retries=1, delay=0.5) or click_image("ok2.png", retries=1, delay=0.5):
+                                print(" -> 「OK」をタップしました。")
+                                time.sleep(2) # 画面遷移の待機
+                                break # OKが見つかったので無限ループを抜ける
+                            # 見つからない場合は1秒待機して再チェック（CPU負荷の軽減）
+                            time.sleep(1)
+                            
+                        # --- 【追加箇所】OKの後の「戻る」処理 ---
+                        print("5. 購入完了後の「戻る」(return.png) を待機しています...")
+                        while True:
+                            if click_image("return.png", retries=1, delay=0.5):
+                                print(" -> 「戻る」をタップしました。次の探索へ移行します。")
+                                time.sleep(2) # メイン画面に戻るまでの待機
+                                break # 戻るが見つかったので無限ループを抜ける
+                            time.sleep(1)
 
                 else:
+                    # 商品がなかった場合の「戻る」処理はそのまま
                     print(" -> 対象商品はありませんでした。「戻る」(return.png)を探します。")
                     if click_image("return.png", retries=3):
                         print(" -> 「戻る」をタップしました。")
