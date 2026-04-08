@@ -11,20 +11,22 @@ SCREENSHOT_DIR = BASE_DIR / "screenshots"
 # 認識のしきい値
 CONFIDENCE = 0.85 
 
-# 欠損している画像ファイル名を記録するセット（エラーの連続表示を防ぐため）
+# 欠損している画像ファイル名を記録するセット
 MISSING_IMAGES = set()
 
-def click_image(image_filename, retries=3, delay=1.0):
+def click_image(image_filename, retries=3, delay=0.5):
+    """
+    デフォルトのdelayを1.0秒から0.5秒に短縮しました。
+    """
     img_path = str(IMG_DIR / image_filename)
     
     if not Path(img_path).exists():
-        # まだ警告を出していない画像の場合のみエラーを表示
         if image_filename not in MISSING_IMAGES:
             print(f"【エラー】画像ファイルが見つかりません: {image_filename} (以降の警告は省略します)")
             MISSING_IMAGES.add(image_filename)
         return False
 
-    for _ in range(retries):
+    for i in range(retries):
         try:
             pos = pyautogui.locateCenterOnScreen(img_path, confidence=CONFIDENCE)
             if pos:
@@ -38,7 +40,9 @@ def click_image(image_filename, retries=3, delay=1.0):
         except pyautogui.ImageNotFoundException:
             pass
         
-        time.sleep(delay)
+        # 最後の1回（失敗確定）の後は待機しないように変更
+        if i < retries - 1:
+            time.sleep(delay)
         
     return False
 
@@ -64,25 +68,28 @@ def main_loop():
     try:
         while True:
             print("1. 「掘り出し物を見る」(horidashi.png) を探しています...")
-            if click_image("horidashi.png", retries=3):
-                print(" -> タップしました。画面遷移を待ちます。(1秒)")
-                time.sleep(1)
+            if click_image("horidashi.png", retries=3, delay=0.5):
+                print(" -> タップしました。画面遷移を待ちます。(0.5秒)")
+                time.sleep(0.5) # 1秒から0.5秒に短縮
 
                 timestamp_view = time.strftime("%Y%m%d_%H%M%S")
                 filename_view = f"sc_{timestamp_view}.png"
                 pyautogui.screenshot().save(SCREENSHOT_DIR / filename_view)
                 
-                time.sleep(1) 
+                # ここにあった time.sleep(1) はスクリーンショットの保存自体に時間がかかるため削除
                 
                 print("2. 商品（karusaito / sufe-n）を探しています...")
-                if click_image("karusaito.png", retries=2) or click_image("sufe-n.png", retries=2):
+                # 【変更】retries=1, delay=0 にすることで、商品がない場合に「一瞬で」次を探します
+                if click_image("karusaito.png", retries=1, delay=0) or \
+                   click_image("sufe-n.png", retries=1, delay=0) or \
+                   click_image("torife-n.png", retries=1, delay=0):
                     print(" -> 対象商品を発見し、タップしました！")
-                    time.sleep(1)
+                    time.sleep(0.5) # 1秒から0.5秒に短縮
                     
                     print("3. 「はい」(yes.png) を探しています...")
-                    if click_image("yes.png", retries=3):
-                        print(" -> 購入処理を実行しました。演出完了を待ちます。(3秒)")
-                        time.sleep(3) 
+                    if click_image("yes.png", retries=3, delay=0.5):
+                        print(" -> 購入処理を実行しました。演出完了を待ちます。(1.5秒)")
+                        time.sleep(1.5) # 環境に合わせて演出時間を調整してください
 
                         print(" -> 購入後のスクリーンショットを撮影します...")
                         timestamp_buy = time.strftime("%Y%m%d_%H%M%S")
@@ -90,35 +97,32 @@ def main_loop():
                         pyautogui.screenshot().save(SCREENSHOT_DIR / filename_buy)
                         print(f" -> 購入結果を保存しました: {filename_buy}")
                         
-                        # --- 【変更箇所】「OK」ボタンを2種類の画像で無限ループ待機 ---
                         print("4. 「OK」(ok.png) の出現を待機しています...")
                         while True:
-                            # retries=1にして、このwhileループ自体でリトライを管理します
-                            if click_image("ok.png", retries=1, delay=0.5):
+                            # 待機ループ内では click_image 側の delay を 0 にし、自前の sleep で細かく回す
+                            if click_image("ok.png", retries=1, delay=0):
                                 print(" -> 「OK」をタップしました。")
-                                time.sleep(2) # 画面遷移の待機
-                                break # OKが見つかったので無限ループを抜ける
-                            # 見つからない場合は1秒待機して再チェック（CPU負荷の軽減）
-                            time.sleep(1)
+                                time.sleep(0.5) 
+                                break 
+                            # CPU負荷軽減用の待機を 1秒 から 0.2秒 に短縮してレスポンス向上
+                            time.sleep(0.2)
                             
-                        # --- 【追加箇所】OKの後の「戻る」処理 ---
                         print("5. 購入完了後の「戻る」(return.png) を待機しています...")
                         while True:
-                            if click_image("return.png", retries=1, delay=0.5):
+                            if click_image("return.png", retries=1, delay=0):
                                 print(" -> 「戻る」をタップしました。次の探索へ移行します。")
-                                time.sleep(2) # メイン画面に戻るまでの待機
-                                break # 戻るが見つかったので無限ループを抜ける
-                            time.sleep(1)
+                                time.sleep(0.5) 
+                                break 
+                            time.sleep(0.2)
 
                 else:
-                    # 商品がなかった場合の「戻る」処理はそのまま
                     print(" -> 対象商品はありませんでした。「戻る」(return.png)を探します。")
-                    if click_image("return.png", retries=3):
+                    if click_image("return.png", retries=2, delay=0.5):
                         print(" -> 「戻る」をタップしました。")
-                        time.sleep(2)
+                        time.sleep(0.5)
             else:
-                print(" -> 「掘り出し物を見る」が見つかりません。3秒後に再試行します。")
-                time.sleep(3)
+                print(" -> 「掘り出し物を見る」が見つかりません。1秒後に再試行します。")
+                time.sleep(1) # 2秒から1秒に短縮
                 
     except KeyboardInterrupt:
         print("\nスクリプトを安全に終了しました。")
