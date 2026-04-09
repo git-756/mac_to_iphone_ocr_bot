@@ -2,6 +2,7 @@ import pyautogui
 import time
 import sys
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor # 並列処理用に追加
 
 # パス設定
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,18 +12,15 @@ SCREENSHOT_DIR = BASE_DIR / "screenshots"
 # 認識のしきい値
 CONFIDENCE = 0.85 
 
-# 欠損している画像ファイル名を記録するセット
 MISSING_IMAGES = set()
 
 def click_image(image_filename, retries=3, delay=0.5):
-    """
-    デフォルトのdelayを1.0秒から0.5秒に短縮しました。
-    """
+    """単一の画像を探してタップする（従来の関数）"""
     img_path = str(IMG_DIR / image_filename)
     
     if not Path(img_path).exists():
         if image_filename not in MISSING_IMAGES:
-            print(f"【エラー】画像ファイルが見つかりません: {image_filename} (以降の警告は省略します)")
+            print(f"【エラー】画像ファイルが見つかりません: {image_filename}")
             MISSING_IMAGES.add(image_filename)
         return False
 
@@ -30,24 +28,55 @@ def click_image(image_filename, retries=3, delay=0.5):
         try:
             pos = pyautogui.locateCenterOnScreen(img_path, confidence=CONFIDENCE)
             if pos:
-                # Retinaディスプレイ等でクリック位置がずれる場合は下のコメントアウトを外して調整
+                # Retinaディスプレイ等の調整用
                 # click_x, click_y = pos.x / 2, pos.y / 2
                 click_x, click_y = pos.x, pos.y
-                
                 pyautogui.click(click_x, click_y)
                 return True
-                
         except pyautogui.ImageNotFoundException:
             pass
         
-        # 最後の1回（失敗確定）の後は待機しないように変更
         if i < retries - 1:
             time.sleep(delay)
         
     return False
 
+# --- 【新規追加】複数アイテムを並列で爆速検索する関数 ---
+def find_items_concurrently(image_filenames, confidence=CONFIDENCE):
+    """
+    1回のスクリーンショットに対して、複数の画像をマルチスレッドで同時に探します。
+    """
+    # 1. 画面全体のスクリーンショットを【1回だけ】撮影する（重い処理を1回に減らす）
+    screenshot = pyautogui.screenshot()
+    
+    def search_single_item(filename):
+        img_path = str(IMG_DIR / filename)
+        if not Path(img_path).exists():
+            return None
+        try:
+            # locateCenterOnScreenではなく、locateを使って『撮影済みのスクショ』から探す
+            box = pyautogui.locate(img_path, screenshot, confidence=confidence)
+            if box:
+                # 見つかった領域から中心座標を計算
+                center_x, center_y = pyautogui.center(box)
+                return (filename, center_x, center_y)
+        except pyautogui.ImageNotFoundException:
+            pass
+        return None
+
+    # 2. マルチスレッドで同時に検索を実行
+    with ThreadPoolExecutor(max_workers=len(image_filenames)) as executor:
+        results = executor.map(search_single_item, image_filenames)
+        
+    # 3. 結果の確認（どれか1つでも見つかればそれを返す）
+    for res in results:
+        if res is not None:
+            return res # (filename, x, y) を返す
+            
+    return None, None, None
+# --------------------------------------------------------
+
 def check_mac_permissions():
-    """画面収録の権限チェック"""
     print("システムの画面収録権限をチェックしています...")
     screenshot = pyautogui.screenshot()
     colors = screenshot.getcolors(maxcolors=1000)
@@ -57,9 +86,8 @@ def check_mac_permissions():
         print(" -> 画面の取得は正常に行われているようです。\n")
 
 def main_loop():
-    print("=== 画像認識BOT 起動 ===")
+    print("=== 画像認識BOT 起動 (並列処理・高速版) ===")
     print(f"画像フォルダ: {IMG_DIR}")
-    print(f"スクショ保存フォルダ: {SCREENSHOT_DIR}")
     
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     check_mac_permissions()
@@ -68,28 +96,28 @@ def main_loop():
     try:
         while True:
             print("1. 「掘り出し物を見る」(horidashi.png) を探しています...")
-            if click_image("horidashi.png", retries=3, delay=0.5):
-                print(" -> タップしました。画面遷移を待ちます。(0.5秒)")
-                time.sleep(0.5) # 1秒から0.5秒に短縮
+            if click_image("horidashi.png", retries=2, delay=0.2):
+                print(" -> タップしました。画面遷移を待ちます。")
+                time.sleep(0.4) 
 
-                timestamp_view = time.strftime("%Y%m%d_%H%M%S")
-                filename_view = f"sc_{timestamp_view}.png"
-                pyautogui.screenshot().save(SCREENSHOT_DIR / filename_view)
+                print("2. 商品（複数）を並列で探しています...")
+                # --- 【変更】並列処理関数を使用するように書き換え ---
+                target_items = ["karusaito.png", "sufe-n.png", "torife-n.png"]
+                found_item, x, y = find_items_concurrently(target_items)
                 
-                # ここにあった time.sleep(1) はスクリーンショットの保存自体に時間がかかるため削除
-                
-                print("2. 商品（karusaito / sufe-n）を探しています...")
-                # 【変更】retries=1, delay=0 にすることで、商品がない場合に「一瞬で」次を探します
-                if click_image("karusaito.png", retries=1, delay=0) or \
-                   click_image("sufe-n.png", retries=1, delay=0) or \
-                   click_image("torife-n.png", retries=1, delay=0):
-                    print(" -> 対象商品を発見し、タップしました！")
-                    time.sleep(0.5) # 1秒から0.5秒に短縮
+                if found_item:
+                    print(f" -> 対象商品（{found_item}）を発見し、タップしました！")
+                    
+                    # Retina環境でクリックがずれる場合は、ここで / 2 を行います
+                    # x, y = x / 2, y / 2
+                    pyautogui.click(x, y)
+                    
+                    time.sleep(0.4) 
                     
                     print("3. 「はい」(yes.png) を探しています...")
-                    if click_image("yes.png", retries=3, delay=0.5):
-                        print(" -> 購入処理を実行しました。演出完了を待ちます。(1.5秒)")
-                        time.sleep(1.5) # 環境に合わせて演出時間を調整してください
+                    if click_image("yes.png", retries=2, delay=0.2):
+                        print(" -> 購入処理を実行しました。演出完了を待ちます。")
+                        time.sleep(1.0) 
 
                         print(" -> 購入後のスクリーンショットを撮影します...")
                         timestamp_buy = time.strftime("%Y%m%d_%H%M%S")
@@ -99,12 +127,10 @@ def main_loop():
                         
                         print("4. 「OK」(ok.png) の出現を待機しています...")
                         while True:
-                            # 待機ループ内では click_image 側の delay を 0 にし、自前の sleep で細かく回す
                             if click_image("ok.png", retries=1, delay=0):
                                 print(" -> 「OK」をタップしました。")
                                 time.sleep(0.5) 
                                 break 
-                            # CPU負荷軽減用の待機を 1秒 から 0.2秒 に短縮してレスポンス向上
                             time.sleep(0.2)
                             
                         print("5. 購入完了後の「戻る」(return.png) を待機しています...")
@@ -117,12 +143,12 @@ def main_loop():
 
                 else:
                     print(" -> 対象商品はありませんでした。「戻る」(return.png)を探します。")
-                    if click_image("return.png", retries=2, delay=0.5):
+                    if click_image("return.png", retries=2, delay=0.2):
                         print(" -> 「戻る」をタップしました。")
-                        time.sleep(0.5)
+                        time.sleep(0.4)
             else:
                 print(" -> 「掘り出し物を見る」が見つかりません。1秒後に再試行します。")
-                time.sleep(1) # 2秒から1秒に短縮
+                time.sleep(1) 
                 
     except KeyboardInterrupt:
         print("\nスクリプトを安全に終了しました。")
