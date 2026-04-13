@@ -100,12 +100,18 @@ def main_loop():
                 print(" -> タップしました。画面遷移を待ちます。")
                 time.sleep(0.4) 
 
-                print("2. 商品（複数）を並列で探しています...")
-                # --- 【変更】並列処理関数を使用するように書き換え ---
-                target_items = ["karusaito.png", "sufe-n.png", "torife-n.png"]
+                print("2. 商品（複数）および「終了条件」を並列で探しています...")
+                # --- 【変更】探すリストに "owari.png" を追加 ---
+                target_items = ["karusaito.png", "sufe-n.png", "torife-n.png", "owari.png"]
                 found_item, x, y = find_items_concurrently(target_items)
                 
-                if found_item:
+                # --- 【新規追加】owari.png を見つけた場合の終了処理 ---
+                if found_item == "owari.png":
+                    print("\n【終了完了】「owari.png」を検出しました。自動化スクリプトを安全に終了します。")
+                    sys.exit() # スクリプトをここで終了させる
+                # --------------------------------------------------
+                
+                elif found_item:
                     print(f" -> 対象商品（{found_item}）を発見し、タップしました！")
                     
                     # Retina環境でクリックがずれる場合は、ここで / 2 を行います
